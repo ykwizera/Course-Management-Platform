@@ -1,0 +1,74 @@
+Register auth/register
+
+{
+  "firstName": "Alice",
+  "lastName": "Manager",
+  "email": "alice.manager@example.com",
+  "password": "Secret123!",
+  "role": "manager",
+  "department": "Academics"
+}
+
+Create modules  api/modules
+
+{
+  "moduleCode": "CS101",
+  "moduleName": "Intro to CS",
+  "description": "Basics of CS",
+  "credits": 3,
+  "duration": 12,
+  "isActive": true
+}
+
+Create modes  api/modes
+
+{
+  "modeName": "Online",
+  "description": "Remote delivery"
+}
+
+create classes api/classes
+{
+  "className": "2025J",
+  "year": 2025,
+  "semester": "J",
+  "isActive": true
+}
+
+create cohorts api/cohorts
+
+{
+  "cohortName": "Cohort 2025",
+  "startDate": "2025-01-01",
+  "endDate": "2025-12-01",
+  "program": "BSc"
+}
+
+Create course offering api/courses
+
+{
+  "moduleId": {{moduleId}},
+  "facilitatorId": {{facilitatorId}},
+  "cohortId": {{cohortId}},
+  "classId": {{classId}},
+  "modeId": {{modeId}},
+  "trimester": "T1",
+  "intakePeriod": "HT1",
+  "startDate": "2025-02-01",
+  "endDate": "2025-03-01",
+  "maxStudents": 30
+}
+
+Create activity log api/logs
+{
+  "allocationId": {{courseOfferingId}},
+  "weekNumber": 1,
+  "attendance": [true, true, false, true],
+  "formativeOneGrading": "Pending",
+  "formativeTwoGrading": "Not Started",
+  "summativeGrading": "Not Started",
+  "courseModeration": "Pending",
+  "intranetSync": "Not Started",
+  "gradeBookStatus": "Not Started",
+  "notes": "Week 1 kickoff complete"
+}
