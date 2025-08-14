@@ -7,9 +7,9 @@ This is a comprehensive Course Management System designed to handle course alloc
 1. **Course Allocation System** - Manages the assignment of facilitators to courses for specific cohorts, trimesters, and intake periods
 2. **Facilitator Activity Tracker (FAT)** - Tracks weekly activities by facilitators including attendance, grading, and moderation
 3. ** Student Reflection Page** -
-       **1. Github Link to Module 3:** https://github.com/ykwizera/Student-Reflection-Page-with-i18n-l10n-Support.git 
-       **2. App Link:** https://reflectionpage.netlify.app/
-       **3. Video walkthrough**  https://youtu.be/0_DO-GgXh-M
+   **1. Github Link to Module 3:** https://github.com/ykwizera/Student-Reflection-Page-with-i18n-l10n-Support.git 
+   **2. App Link:** https://reflectionpage.netlify.app/
+ 4. **Video walkthrough**  https://youtu.be/0_DO-GgXh-M
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
