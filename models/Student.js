@@ -1,53 +1,54 @@
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const Student = sequelize.define('Student', {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
     },
-    userId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      unique: true,
-      references: {
-        model: 'Users',
-        key: 'id'
-      }
+    firstName: {
+      type: DataTypes.STRING,
+      allowNull: false
     },
-    studentId: {
+    lastName: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    email: {
       type: DataTypes.STRING,
       allowNull: false,
       unique: true,
       validate: {
-        len: [1, 50]
+        isEmail: true
       }
     },
+    studentId: {
+      type: DataTypes.STRING,
+      unique: true,
+      allowNull: false
+    },
     cohortId: {
-      type: DataTypes.UUID,
-      allowNull: true,
+      type: DataTypes.INTEGER,
+      allowNull: false,
       references: {
-        model: 'Cohorts',
+        model: 'cohorts',
         key: 'id'
       }
     },
     enrollmentDate: {
-      type: DataTypes.DATEONLY,
-      allowNull: false
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW
     },
-    status: {
-      type: DataTypes.ENUM('active', 'inactive', 'graduated', 'withdrawn'),
-      defaultValue: 'active'
+    isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true
     }
+  }, {
+    tableName: 'students',
+    timestamps: true
   });
 
-  Student.associate = (models) => {
-    Student.belongsTo(models.User, {
-      foreignKey: 'userId',
-      as: 'user'
-    });
-    
+  Student.associate = function(models) {
+    // Students belong to a cohort
     Student.belongsTo(models.Cohort, {
       foreignKey: 'cohortId',
       as: 'cohort'

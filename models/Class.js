@@ -1,56 +1,34 @@
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const Class = sequelize.define('Class', {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
     },
-    code: {
+    className: {
       type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
-      validate: {
-        len: [1, 20]
-      }
-    },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      validate: {
-        len: [1, 100]
-      }
+      unique: true // e.g., '2024S', '2025J'
     },
     year: {
       type: DataTypes.INTEGER,
-      allowNull: false,
-      validate: {
-        min: 2020,
-        max: 2050
-      }
-    },
-    trimester: {
-      type: DataTypes.ENUM('1', '2', '3'),
       allowNull: false
+    },
+    semester: {
+      type: DataTypes.STRING,
+      allowNull: false // e.g., 'S' for Spring, 'J' for January
     },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     }
   }, {
-    indexes: [
-      {
-        unique: true,
-        fields: ['code']
-      },
-      {
-        fields: ['year', 'trimester']
-      }
-    ]
+    tableName: 'classes',
+    timestamps: true
   });
 
-  Class.associate = (models) => {
+  Class.associate = function(models) {
+    // Classes can have multiple course offerings
     Class.hasMany(models.CourseOffering, {
       foreignKey: 'classId',
       as: 'courseOfferings'

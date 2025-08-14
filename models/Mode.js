@@ -1,28 +1,26 @@
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const Mode = sequelize.define('Mode', {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
     },
-    name: {
-      type: DataTypes.ENUM('online', 'in-person', 'hybrid'),
+    modeName: {
+      type: DataTypes.ENUM('Online', 'In-person', 'Hybrid'),
       allowNull: false,
       unique: true
     },
     description: {
-      type: DataTypes.TEXT,
+      type: DataTypes.STRING,
       allowNull: true
-    },
-    isActive: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: true
     }
+  }, {
+    tableName: 'modes',
+    timestamps: true
   });
 
-  Mode.associate = (models) => {
+  Mode.associate = function(models) {
+    // Modes can have multiple course offerings
     Mode.hasMany(models.CourseOffering, {
       foreignKey: 'modeId',
       as: 'courseOfferings'

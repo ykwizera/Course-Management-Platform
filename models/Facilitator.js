@@ -1,64 +1,60 @@
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const Facilitator = sequelize.define('Facilitator', {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
     },
-    userId: {
-      type: DataTypes.UUID,
+    firstName: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    lastName: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
+    email: {
+      type: DataTypes.STRING,
       allowNull: false,
       unique: true,
-      references: {
-        model: 'Users',
-        key: 'id'
+      validate: {
+        isEmail: true
       }
+    },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: false
     },
     employeeId: {
       type: DataTypes.STRING,
-      allowNull: true,
       unique: true,
-      validate: {
-        len: [1, 50]
-      }
+      allowNull: true
     },
-    department: {
+    specialization: {
       type: DataTypes.STRING,
-      allowNull: true,
-      validate: {
-        len: [1, 100]
-      }
-    },
-    specializations: {
-      type: DataTypes.JSON,
-      defaultValue: []
+      allowNull: true
     },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
-    },
-    hireDate: {
-      type: DataTypes.DATEONLY,
-      allowNull: true
     }
+  }, {
+    tableName: 'facilitators',
+    timestamps: true
   });
 
-  Facilitator.associate = (models) => {
-    Facilitator.belongsTo(models.User, {
-      foreignKey: 'userId',
-      as: 'user'
-    });
-    
+  Facilitator.associate = function(models) {
+    // Facilitators can be assigned to multiple course offerings
     Facilitator.hasMany(models.CourseOffering, {
       foreignKey: 'facilitatorId',
       as: 'courseOfferings'
     });
-    
-    Facilitator.hasMany(models.ActivityTracker, {
+
+    // Facilitators can have multiple activity trackers
+    Facilitator.belongsToMany(models.ActivityTracker, {
+      through: models.CourseOffering,
       foreignKey: 'facilitatorId',
-      as: 'activityLogs'
+      as: 'activityTrackers'
     });
   };
 

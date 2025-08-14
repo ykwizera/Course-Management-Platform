@@ -1,26 +1,18 @@
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const Module = sequelize.define('Module', {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
     },
-    code: {
+    moduleCode: {
       type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
-      validate: {
-        len: [1, 20]
-      }
+      unique: true
     },
-    name: {
+    moduleName: {
       type: DataTypes.STRING,
-      allowNull: false,
-      validate: {
-        len: [1, 200]
-      }
+      allowNull: false
     },
     description: {
       type: DataTypes.TEXT,
@@ -28,38 +20,23 @@ module.exports = (sequelize) => {
     },
     credits: {
       type: DataTypes.INTEGER,
-      allowNull: false,
-      validate: {
-        min: 1,
-        max: 20
-      }
+      defaultValue: 3
     },
     duration: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      comment: 'Duration in weeks'
-    },
-    prerequisites: {
-      type: DataTypes.JSON,
-      defaultValue: []
+      type: DataTypes.INTEGER, // in weeks
+      defaultValue: 12
     },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     }
   }, {
-    indexes: [
-      {
-        unique: true,
-        fields: ['code']
-      },
-      {
-        fields: ['isActive']
-      }
-    ]
+    tableName: 'modules',
+    timestamps: true
   });
 
-  Module.associate = (models) => {
+  Module.associate = function(models) {
+    // Modules can have multiple course offerings
     Module.hasMany(models.CourseOffering, {
       foreignKey: 'moduleId',
       as: 'courseOfferings'

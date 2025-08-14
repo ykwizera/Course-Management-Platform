@@ -1,61 +1,44 @@
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   const Cohort = sequelize.define('Cohort', {
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
     },
-    name: {
+    cohortName: {
       type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
-      validate: {
-        len: [1, 100]
-      }
-    },
-    description: {
-      type: DataTypes.TEXT,
-      allowNull: true
+      unique: true
     },
     startDate: {
-      type: DataTypes.DATEONLY,
+      type: DataTypes.DATE,
       allowNull: false
     },
     endDate: {
-      type: DataTypes.DATEONLY,
+      type: DataTypes.DATE,
       allowNull: false
     },
-    maxStudents: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      validate: {
-        min: 1
-      }
+    program: {
+      type: DataTypes.STRING,
+      allowNull: false
     },
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     }
   }, {
-    indexes: [
-      {
-        unique: true,
-        fields: ['name']
-      },
-      {
-        fields: ['isActive']
-      }
-    ]
+    tableName: 'cohorts',
+    timestamps: true
   });
 
-  Cohort.associate = (models) => {
+  Cohort.associate = function(models) {
+    // Cohorts can have multiple students
     Cohort.hasMany(models.Student, {
       foreignKey: 'cohortId',
       as: 'students'
     });
-    
+
+    // Cohorts can have multiple course offerings
     Cohort.hasMany(models.CourseOffering, {
       foreignKey: 'cohortId',
       as: 'courseOfferings'
