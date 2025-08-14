@@ -1,286 +1,201 @@
+const Bull = require('bull');
+const nodemailer = require('nodemailer');
 const redisClient = require('../config/redis');
-const { Manager, User, ActivityTracker, CourseOffering, Facilitator } = require('../models');
 const logger = require('../utils/logger');
+const { ActivityTracker, CourseOffering, Facilitator, Manager } = require('../models');
 
-const NOTIFICATION_QUEUES = {
-  REMINDER: 'notification:reminder',
-  ALERT: 'notification:alert',
-  DEADLINE: 'notification:deadline'
-};
+// Create Bull queues
+const emailQueue = new Bull('email queue', {
+  redis: {
+    port: process.env.REDIS_PORT || 6379,
+    host: process.env.REDIS_HOST || 'localhost',
+    password: process.env.REDIS_PASSWORD || undefined
+  }
+});
 
-const notificationService = {
-  // Queue a notification
-  queueNotification: async (type, data) => {
-    try {
-      const notification = {
-        id: `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        type,
-        data,
-        timestamp: new Date().toISOString(),
-        attempts: 0,
-        maxAttempts: 3
-      };
+const reminderQueue = new Bull('reminder queue', {
+  redis: {
+    port: process.env.REDIS_PORT || 6379,
+    host: process.env.REDIS_HOST || 'localhost',
+    password: process.env.REDIS_PASSWORD || undefined
+  }
+});
 
-      await redisClient.lpush(NOTIFICATION_QUEUES[type], JSON.stringify(notification));
-      logger.info(`Notification queued: ${type} - ${notification.id}`);
-      
-      return notification.id;
-    } catch (error) {
-      logger.error('Error queueing notification:', error);
-      throw error;
+// Email transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_PORT,
+  secure: false,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+// Process email queue
+emailQueue.process(async (job) => {
+  const { to, subject, text, html } = job.data;
+  
+  try {
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to,
+      subject,
+      text,
+      html
+    });
+    
+    logger.info(`Email sent successfully to ${to}`, { messageId: info.messageId });
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    logger.error(`Failed to send email to ${to}:`, error);
+    throw error;
+  }
+});
+
+// Process reminder queue
+reminderQueue.process(async (job) => {
+  const { type } = job.data;
+  
+  try {
+    if (type === 'weekly_reminder') {
+      await sendWeeklyReminders();
+    } else if (type === 'deadline_alert') {
+      await sendDeadlineAlerts();
     }
-  },
+    
+    return { success: true };
+  } catch (error) {
+    logger.error('Failed to process reminder:', error);
+    throw error;
+  }
+});
 
-  // Send reminder to facilitators for missing activity logs
-  sendActivityLogReminder: async (facilitatorId, weekNumber) => {
-    try {
-      const facilitator = await Facilitator.findByPk(facilitatorId, {
-        include: [{
-          model: User,
-          as: 'user',
-          attributes: ['firstName', 'lastName', 'email']
-        }]
+// Send weekly reminders to facilitators
+const sendWeeklyReminders = async () => {
+  const currentWeek = getCurrentWeek();
+  const facilitators = await Facilitator.findAll({
+    where: { isActive: true },
+    include: [{
+      model: CourseOffering,
+      as: 'courseOfferings',
+      where: { isActive: true },
+      include: [{
+        model: ActivityTracker,
+        as: 'activityTrackers',
+        where: { weekNumber: currentWeek },
+        required: false
+      }]
+    }]
+  });
+
+  for (const facilitator of facilitators) {
+    const pendingCourses = facilitator.courseOfferings.filter(course => 
+      !course.activityTrackers.length || 
+      course.activityTrackers.some(tracker => 
+        tracker.formativeOneGrading === 'Not Started' ||
+        tracker.formativeTwoGrading === 'Not Started' ||
+        tracker.summativeGrading === 'Not Started'
+      )
+    );
+
+    if (pendingCourses.length > 0) {
+      await emailQueue.add('send_reminder', {
+        to: facilitator.email,
+        subject: `Weekly Activity Log Reminder - Week ${currentWeek}`,
+        text: `Dear ${facilitator.firstName},\n\nThis is a reminder to submit your weekly activity logs for week ${currentWeek}.\n\nPending courses: ${pendingCourses.length}\n\nPlease log in to the system to update your activities.`,
+        html: `
+          <h2>Weekly Activity Log Reminder</h2>
+          <p>Dear ${facilitator.firstName},</p>
+          <p>This is a reminder to submit your weekly activity logs for week ${currentWeek}.</p>
+          <p><strong>Pending courses:</strong> ${pendingCourses.length}</p>
+          <p>Please log in to the system to update your activities.</p>
+        `
       });
-
-      if (!facilitator) {
-        throw new Error(`Facilitator not found: ${facilitatorId}`);
-      }
-
-      const notificationData = {
-        recipient: {
-          id: facilitator.userId,
-          email: facilitator.user.email,
-          name: `${facilitator.user.firstName} ${facilitator.user.lastName}`
-        },
-        message: {
-          subject: 'Activity Log Reminder',
-          body: `Dear ${facilitator.user.firstName}, you have not submitted your activity log for week ${weekNumber}. Please submit it as soon as possible.`,
-          priority: 'normal'
-        },
-        metadata: {
-          facilitatorId,
-          weekNumber,
-          type: 'activity_log_reminder'
-        }
-      };
-
-      return await this.queueNotification('REMINDER', notificationData);
-    } catch (error) {
-      logger.error('Error sending activity log reminder:', error);
-      throw error;
-    }
-  },
-
-  // Send deadline alert to managers
-  sendDeadlineAlert: async (missedDeadlines) => {
-    try {
-      const managers = await Manager.findAll({
-        where: { isActive: true },
-        include: [{
-          model: User,
-          as: 'user',
-          attributes: ['firstName', 'lastName', 'email']
-        }]
-      });
-
-      for (const manager of managers) {
-        const notificationData = {
-          recipient: {
-            id: manager.userId,
-            email: manager.user.email,
-            name: `${manager.user.firstName} ${manager.user.lastName}`
-          },
-          message: {
-            subject: 'Activity Log Deadline Alert',
-            body: `${missedDeadlines.length} facilitator(s) have missed activity log submission deadlines. Please review and take appropriate action.`,
-            priority: 'high'
-          },
-          metadata: {
-            missedDeadlines,
-            type: 'deadline_alert'
-          }
-        };
-
-        await this.queueNotification('ALERT', notificationData);
-      }
-
-      return true;
-    } catch (error) {
-      logger.error('Error sending deadline alert:', error);
-      throw error;
-    }
-  },
-
-  // Notify managers when activity log is submitted
-  notifyActivityLogSubmission: async (activityLog, facilitator) => {
-    try {
-      const managers = await Manager.findAll({
-        where: { isActive: true },
-        include: [{
-          model: User,
-          as: 'user',
-          attributes: ['firstName', 'lastName', 'email']
-        }]
-      });
-
-      for (const manager of managers) {
-        const notificationData = {
-          recipient: {
-            id: manager.userId,
-            email: manager.user.email,
-            name: `${manager.user.firstName} ${manager.user.lastName}`
-          },
-          message: {
-            subject: 'Activity Log Submitted',
-            body: `${facilitator.firstName} ${facilitator.lastName} has submitted an activity log for week ${activityLog.weekNumber} in ${activityLog.courseOffering.module.name}.`,
-            priority: 'normal'
-          },
-          metadata: {
-            activityLogId: activityLog.id,
-            facilitatorId: facilitator.facilitatorProfile.id,
-            weekNumber: activityLog.weekNumber,
-            type: 'activity_log_submission'
-          }
-        };
-
-        await this.queueNotification('ALERT', notificationData);
-      }
-
-      return true;
-    } catch (error) {
-      logger.error('Error notifying activity log submission:', error);
-      throw error;
-    }
-  },
-
-  // Check for overdue activity logs and send alerts
-  checkOverdueActivityLogs: async () => {
-    try {
-      const currentDate = new Date();
-      const overdueThreshold = new Date(currentDate.getTime() - (7 * 24 * 60 * 60 * 1000)); // 7 days ago
-
-      // Find activity logs that are overdue (week ended but not submitted)
-      const overdueLogs = await ActivityTracker.findAll({
-        where: {
-          submittedAt: null,
-          weekEndDate: {
-            [require('sequelize').Op.lt]: overdueThreshold
-          }
-        },
-        include: [
-          {
-            model: CourseOffering,
-            as: 'courseOffering',
-            include: [{
-              model: require('../models').Module,
-              as: 'module'
-            }]
-          },
-          {
-            model: Facilitator,
-            as: 'facilitator',
-            include: [{
-              model: User,
-              as: 'user'
-            }]
-          }
-        ]
-      });
-
-      if (overdueLogs.length > 0) {
-        // Group by facilitator
-        const facilitatorGroups = overdueLogs.reduce((groups, log) => {
-          const facilitatorId = log.facilitatorId;
-          if (!groups[facilitatorId]) {
-            groups[facilitatorId] = {
-              facilitator: log.facilitator,
-              logs: []
-            };
-          }
-          groups[facilitatorId].logs.push(log);
-          return groups;
-        }, {});
-
-        // Send reminders to facilitators
-        for (const [facilitatorId, group] of Object.entries(facilitatorGroups)) {
-          for (const log of group.logs) {
-            await this.sendActivityLogReminder(facilitatorId, log.weekNumber);
-          }
-        }
-
-        // Send alert to managers
-        await this.sendDeadlineAlert(overdueLogs);
-
-        logger.info(`Processed ${overdueLogs.length} overdue activity logs`);
-      }
-
-      return overdueLogs.length;
-    } catch (error) {
-      logger.error('Error checking overdue activity logs:', error);
-      throw error;
-    }
-  },
-
-  // Process notification queue
-  processNotificationQueue: async (queueName) => {
-    try {
-      const notification = await redisClient.brpop(queueName, 0);
-      
-      if (notification) {
-        const notificationData = JSON.parse(notification[1]);
-        
-        // Simulate sending notification (email, SMS, etc.)
-        logger.info(`Processing notification: ${notificationData.id}`);
-        logger.info(`To: ${notificationData.data.recipient.email}`);
-        logger.info(`Subject: ${notificationData.data.message.subject}`);
-        logger.info(`Body: ${notificationData.data.message.body}`);
-        
-        // In a real implementation, you would integrate with email service like SendGrid, SES, etc.
-        // await emailService.send(notificationData.data);
-        
-        // Log successful delivery
-        await this.logNotificationDelivery(notificationData.id, 'delivered');
-        
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      logger.error('Error processing notification queue:', error);
-      throw error;
-    }
-  },
-
-  // Log notification delivery results
-  logNotificationDelivery: async (notificationId, status, error = null) => {
-    try {
-      const logKey = `notification_log:${notificationId}`;
-      const logData = {
-        id: notificationId,
-        status,
-        timestamp: new Date().toISOString(),
-        error: error ? error.message : null
-      };
-
-      await redisClient.setex(logKey, 86400 * 7, JSON.stringify(logData)); // Keep for 7 days
-      logger.info(`Notification delivery logged: ${notificationId} - ${status}`);
-    } catch (error) {
-      logger.error('Error logging notification delivery:', error);
-    }
-  },
-
-  // Get notification delivery status
-  getNotificationStatus: async (notificationId) => {
-    try {
-      const logKey = `notification_log:${notificationId}`;
-      const logData = await redisClient.get(logKey);
-      
-      return logData ? JSON.parse(logData) : null;
-    } catch (error) {
-      logger.error('Error getting notification status:', error);
-      return null;
     }
   }
 };
 
-module.exports = notificationService;
+// Send deadline alerts to managers
+const sendDeadlineAlerts = async () => {
+  const currentWeek = getCurrentWeek();
+  const overdueLogs = await ActivityTracker.findAll({
+    where: {
+      weekNumber: { [require('sequelize').Op.lt]: currentWeek },
+      submittedAt: null
+    },
+    include: [{
+      model: CourseOffering,
+      as: 'courseOffering',
+      include: [
+        { model: Facilitator, as: 'facilitator' },
+        { model: Manager, as: 'creator' }
+      ]
+    }]
+  });
+
+  // Group by manager
+  const managerAlerts = {};
+  overdueLogs.forEach(log => {
+    const managerId = log.courseOffering.createdBy;
+    if (!managerAlerts[managerId]) {
+      managerAlerts[managerId] = {
+        manager: log.courseOffering.creator,
+        overdueLogs: []
+      };
+    }
+    managerAlerts[managerId].overdueLogs.push(log);
+  });
+
+  // Send alerts to managers
+  for (const [managerId, alert] of Object.entries(managerAlerts)) {
+    await emailQueue.add('send_alert', {
+      to: alert.manager.email,
+      subject: `Overdue Activity Logs Alert`,
+      text: `Dear ${alert.manager.firstName},\n\nThere are ${alert.overdueLogs.length} overdue activity logs that require attention.\n\nPlease review the system for details.`,
+      html: `
+        <h2>Overdue Activity Logs Alert</h2>
+        <p>Dear ${alert.manager.firstName},</p>
+        <p>There are <strong>${alert.overdueLogs.length}</strong> overdue activity logs that require attention.</p>
+        <ul>
+          ${alert.overdueLogs.map(log => `
+            <li>
+              Week ${log.weekNumber} - ${log.courseOffering.facilitator.firstName} ${log.courseOffering.facilitator.lastName}
+              (${log.courseOffering.module?.moduleName || 'Module'})
+            </li>
+          `).join('')}
+        </ul>
+        <p>Please review the system for details.</p>
+      `
+    });
+  }
+};
+
+// Helper function to get current week number
+const getCurrentWeek = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 1);
+  const days = Math.floor((now - start) / (24 * 60 * 60 * 1000));
+  return Math.ceil((days + start.getDay() + 1) / 7);
+};
+
+// Schedule recurring jobs
+const scheduleRecurringJobs = () => {
+  // Send weekly reminders every Monday at 9 AM
+  reminderQueue.add('weekly_reminder', {}, {
+    repeat: { cron: '0 9 * * 1' }
+  });
+
+  // Send deadline alerts every day at 6 PM
+  reminderQueue.add('deadline_alert', {}, {
+    repeat: { cron: '0 18 * * *' }
+  });
+};
+
+module.exports = {
+  emailQueue,
+  reminderQueue,
+  scheduleRecurringJobs,
+  sendWeeklyReminders,
+  sendDeadlineAlerts
+};
